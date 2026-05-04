@@ -54,6 +54,7 @@ library Blender's build system expects.
 
 ## Known limitations
 
+- Cycles is the default renderer (usdtweak picks the first plugin alphabetically)
 - First launch is slow (~60s) as Cycles compiles Metal shaders
 - hdCycles.dylib has absolute rpaths to the build machine's dependency
   directories (not relocatable without `install_name_tool` fixups)
