@@ -1,7 +1,7 @@
 # usdtweak-macos
 
 Build [usdtweak](https://github.com/cpichard/usdtweak) with
-[Cycles](https://www.cycles-renderer.org/) path tracing on macOS Apple Silicon (M-series).
+[Cycles](https://www.cycles-renderer.org/) path tracing on macOS Apple Silicon.
 
 This repo contains a self-contained build script that clones usdtweak and
 Blender sources, patches Cycles' Hydra render delegate for OpenUSD 26.03,
@@ -55,8 +55,6 @@ library Blender's build system expects.
 ## Known limitations
 
 - First launch is slow (~60s) as Cycles compiles Metal shaders
-- Only Metal GPU rendering (no CUDA/HIP/OneAPI on macOS)
-- No OSL shading
 - hdCycles.dylib has absolute rpaths to the build machine's dependency
   directories (not relocatable without `install_name_tool` fixups)
 
