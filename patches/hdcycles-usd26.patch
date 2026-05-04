@@ -1,0 +1,83 @@
+diff --git a/intern/cycles/hydra/material.cpp b/intern/cycles/hydra/material.cpp
+index 3b9919f7..c72e3d06 100644
+--- a/intern/cycles/hydra/material.cpp
++++ b/intern/cycles/hydra/material.cpp
+@@ -579,6 +579,10 @@ void HdCyclesMaterial::Initialize(HdRenderParam *renderParam)
+   const SceneLock lock(renderParam);
+ 
+   _shader = lock.scene->create_node<Shader>();
++  /* Ensure shader always has a valid graph, even before material network is synced.
++   * Cycles internals (ShaderManager::device_update_pre, Shader::tag_update) assume
++   * graph is never null. */
++  _shader->set_graph(make_unique<ShaderGraph>());
+ }
+ 
+ HDCYCLES_NAMESPACE_CLOSE_SCOPE
+diff --git a/intern/cycles/hydra/mesh.cpp b/intern/cycles/hydra/mesh.cpp
+index e305e4af..920dcb0c 100644
+--- a/intern/cycles/hydra/mesh.cpp
++++ b/intern/cycles/hydra/mesh.cpp
+@@ -55,7 +55,8 @@ VtValue ComputeTriangulatedFaceVaryingPrimvar(VtValue value,
+                                               HdMeshUtil &meshUtil)
+ {
+   if (meshUtil.ComputeTriangulatedFaceVaryingPrimvar(
+-          HdGetValueData(value), value.GetArraySize(), valueType, &value))
++          HdGetValueData(value), value.GetArraySize(), valueType, &value)
++      != HdMeshComputationResult::Error)
+   {
+     return value;
+   }
+diff --git a/intern/cycles/hydra/plugin.cpp b/intern/cycles/hydra/plugin.cpp
+index 3a139cf9..7c394b52 100644
+--- a/intern/cycles/hydra/plugin.cpp
++++ b/intern/cycles/hydra/plugin.cpp
+@@ -45,6 +45,15 @@ bool HdCyclesPlugin::IsSupported(bool /*gpuEnabled*/) const
+ }
+ #endif
+ 
++#if PXR_VERSION >= 2603
++bool HdCyclesPlugin::IsSupported(
++    const HdRendererCreateArgs & /*rendererCreateArgs*/,
++    std::string * /*reasonWhyNot*/) const
++{
++  return true;
++}
++#endif
++
+ HdRenderDelegate *HdCyclesPlugin::CreateRenderDelegate()
+ {
+   return CreateRenderDelegate({});
+diff --git a/intern/cycles/hydra/plugin.h b/intern/cycles/hydra/plugin.h
+index 6a79ade9..5a6fbeb3 100644
+--- a/intern/cycles/hydra/plugin.h
++++ b/intern/cycles/hydra/plugin.h
+@@ -17,8 +17,13 @@ class HdCyclesPlugin final : public PXR_NS::HdRendererPlugin {
+ 
+ #if PXR_VERSION < 2302
+   bool IsSupported() const override;
++#elif PXR_VERSION < 2603
++  bool IsSupported(bool gpuEnabled) const override;
+ #else
+   bool IsSupported(bool gpuEnabled) const override;
++  bool IsSupported(
++      const PXR_NS::HdRendererCreateArgs &rendererCreateArgs,
++      std::string *reasonWhyNot = nullptr) const override;
+ #endif
+ 
+   PXR_NS::HdRenderDelegate *CreateRenderDelegate() override;
+diff --git a/intern/cycles/hydra/render_delegate.cpp b/intern/cycles/hydra/render_delegate.cpp
+index ea3dae98..26e615c5 100644
+--- a/intern/cycles/hydra/render_delegate.cpp
++++ b/intern/cycles/hydra/render_delegate.cpp
+@@ -355,7 +355,10 @@ TfToken HdCyclesDelegate::GetMaterialNetworkSelector() const
+ #else
+ TfTokenVector HdCyclesDelegate::GetMaterialRenderContexts() const
+ {
+-  return {_tokens->cycles};
++  /* Include the universal render context (empty token) so that
++   * UsdPreviewSurface materials are picked up in addition to
++   * Cycles-specific material networks. */
++  return {_tokens->cycles, TfToken()};
+ }
+ #endif
+ 

@@ -1,0 +1,11 @@
+# Cloned sources & build artifacts
+source/
+build/
+deps/
+
+# pixi
+.pixi/
+
+# macOS
+.DS_Store
+*.app
