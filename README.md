@@ -1,54 +1,89 @@
 # usdtweak-macos
 
-Reproducible build of [usdtweak](https://github.com/cpichard/usdtweak) with
-[Blender Cycles](https://www.cycles-renderer.org/) as a Hydra render delegate
-on macOS Apple Silicon.
+Build [usdtweak](https://github.com/cpichard/usdtweak) with
+[Cycles](https://www.cycles-renderer.org/) path tracing on macOS Apple Silicon (M-series).
 
-## What you get
+This repo contains a self-contained build script that clones usdtweak and
+Blender sources, patches Cycles' Hydra render delegate for OpenUSD 26.03,
+and compiles everything into a single app bundle with both Storm (rasterizer)
+and Cycles (Metal GPU path tracer) as viewport renderers.
 
-- **usdtweak.app** — USD scene editor with viewport
-- **Storm** — OpenGL/Metal rasterizer (default, from conda-forge OpenUSD)
-- **Cycles** — GPU path tracer via Metal (Blender's hdCycles Hydra delegate)
-
-## Prerequisites
-
-- macOS on Apple Silicon (M1/M2/M3/M4)
-- Xcode Command Line Tools (`xcode-select --install`)
-- ~30 GB free disk space
-- Internet connection (clones repos, downloads conda packages)
-
-## Build
+## Build from source
 
 ```
-make build
-```
-
-This will:
-1. Install [pixi](https://pixi.sh) (conda package manager) if needed
-2. Clone & build usdtweak from the `develop` branch
-3. Clone Blender + precompiled ARM64 libs
-4. Create a USD compatibility wrapper (conda-forge USD ↔ Blender's `libusd_ms`)
-5. Patch & build hdCycles against conda-forge USD 26.03
-6. Assemble the final app bundle with both Storm and Cycles
-
-## Run
-
-```
+git clone https://github.com/vitusli/usdtweak-macos.git
+cd usdtweak-macos
+make build   # ~45 min first time
 make run
 ```
 
-## Patches
+## Requirements
 
-`patches/hdcycles-usd26.patch` adapts Blender's hdCycles to USD 26.03:
+- macOS on Apple Silicon
+- Xcode command-line tools (`xcode-select --install`)
+- ~30 GB disk space
+- Internet connection (clones repos, downloads conda packages)
 
-- **mesh.cpp** — `ComputeTriangulatedFaceVaryingPrimvar` returns `HdMeshComputationResult` enum instead of `bool`
-- **plugin.h/cpp** — add `IsSupported(HdRendererCreateArgs)` override (new pure virtual in USD 26.03)
-- **material.cpp** — initialize shader with empty graph to prevent null dereference in Cycles internals
-- **render_delegate.cpp** — include universal render context so UsdPreviewSurface materials work
+The build script will install [pixi](https://pixi.sh) (conda package manager)
+if not present.
 
-## Configuration
+## Make targets
 
-| Variable | Default | Description |
-|---|---|---|
-| `USDTWEAK_BRANCH` | `develop` | usdtweak git branch |
-| `BLENDER_BRANCH` | `main` | Blender git branch |
+| Target | Description |
+|--------|-------------|
+| `make build` | Clone, patch, and build everything |
+| `make run` | Launch usdtweak with Cycles enabled |
+| `make clean` | Remove source, build, and deps directories |
+
+## What the patches fix
+
+`patches/hdcycles-usd26.patch` adapts Blender's hdCycles to OpenUSD 26.03:
+
+- **mesh.cpp** — `ComputeTriangulatedFaceVaryingPrimvar` returns
+  `HdMeshComputationResult` enum instead of `bool` in USD 26.03
+- **plugin.h/cpp** — add `IsSupported(HdRendererCreateArgs)` override,
+  a new pure virtual in USD 26.03
+- **material.cpp** — initialize shaders with an empty graph to prevent
+  null dereference in Cycles internals when materials have no network
+- **render_delegate.cpp** — include the universal render context so
+  UsdPreviewSurface materials are picked up (not just `cycles:`-prefixed ones)
+
+The build script also creates a `libusd_ms.dylib` compatibility wrapper that
+re-exports all individual conda-forge USD libraries as the single monolithic
+library Blender's build system expects.
+
+## Known limitations
+
+- First launch is slow (~60s) as Cycles compiles Metal shaders
+- Only Metal GPU rendering (no CUDA/HIP/OneAPI on macOS)
+- No OSL shading
+- hdCycles.dylib has absolute rpaths to the build machine's dependency
+  directories (not relocatable without `install_name_tool` fixups)
+
+## Project structure
+
+```
+usdtweak-macos/
+  build.sh                       # Main build script
+  Makefile                       # Convenience targets
+  patches/hdcycles-usd26.patch   # Cycles ↔ USD 26.03 compat patches
+```
+
+After building:
+
+```
+  source/          # usdtweak clone + pixi env
+  deps/blender/    # Blender clone + precompiled ARM64 libs
+  deps/conda_usd_compat/  # USD wrapper library
+  build/usdtweak.app      # Final app bundle
+```
+
+## License
+
+The build script and patches in this repository are provided under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0),
+matching the licenses of usdtweak, Cycles standalone, and OpenUSD.
+
+Note: Pre-built binaries are not distributed because hdCycles links
+statically against `bf_intern_guardedalloc` (GPL-2.0) from the Blender
+source tree. Build from source to use.
