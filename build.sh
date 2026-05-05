@@ -25,10 +25,11 @@ COMPAT_DIR="${DEPS_DIR}/conda_usd_compat"
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Ensure pixi is installed
 # ─────────────────────────────────────────────────────────────────────────────
+# Add pixi to PATH for this script (no need to pollute .zshrc)
+export PATH="$HOME/.pixi/bin:$PATH"
 if ! command -v pixi &>/dev/null; then
     echo "==> Installing pixi …"
     curl -fsSL https://pixi.sh/install.sh | bash
-    export PATH="$HOME/.pixi/bin:$PATH"
 fi
 echo "==> pixi $(pixi --version)"
 
