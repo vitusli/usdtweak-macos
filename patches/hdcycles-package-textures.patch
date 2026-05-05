@@ -1,0 +1,90 @@
+diff --git a/intern/cycles/hydra/node_util.cpp b/intern/cycles/hydra/node_util.cpp
+index 2317e8c4..58268af3 100644
+--- a/intern/cycles/hydra/node_util.cpp
++++ b/intern/cycles/hydra/node_util.cpp
+@@ -6,6 +6,14 @@
+ #include "hydra/node_util.h"
+ #include "util/transform.h"
+ 
++#include <pxr/usd/ar/resolver.h>
++#include <pxr/usd/ar/resolvedPath.h>
++#include <pxr/usd/ar/asset.h>
++#include <pxr/usd/ar/packageUtils.h>
++#include <pxr/base/tf/pathUtils.h>
++#include <fstream>
++#include <filesystem>
++
+ #include <pxr/base/gf/matrix3d.h>
+ #include <pxr/base/gf/matrix3f.h>
+ #include <pxr/base/gf/matrix4d.h>
+@@ -19,6 +27,53 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
+ 
+ namespace {
+ 
++/* Resolve a package-relative asset path (e.g. inside .usdz) by extracting
++ * the asset data via ArResolver and caching it to a temporary file on disk.
++ * Returns the path to the extracted file, or empty string on failure. */
++std::string resolvePackageAsset(const std::string &resolvedPath)
++{
++  namespace fs = std::filesystem;
++
++  std::string cacheDir = (fs::temp_directory_path() / "hdCycles_texcache").string();
++  fs::create_directories(cacheDir);
++
++  /* Use a hash of the full resolved path as filename, preserving extension */
++  size_t pathHash = std::hash<std::string>{}(resolvedPath);
++  std::string ext = TfGetExtension(resolvedPath);
++  if (ext.empty()) {
++    std::string innerPath = ArSplitPackageRelativePathInner(resolvedPath).second;
++    ext = TfGetExtension(innerPath);
++  }
++  std::string cachedFile = cacheDir + "/" + std::to_string(pathHash);
++  if (!ext.empty()) {
++    cachedFile += "." + ext;
++  }
++
++  /* If already cached, return immediately */
++  if (fs::exists(cachedFile)) {
++    return cachedFile;
++  }
++
++  /* Open the asset through the ArResolver (handles .usdz packages) */
++  ArResolver &resolver = ArGetResolver();
++  std::shared_ptr<ArAsset> asset = resolver.OpenAsset(ArResolvedPath(resolvedPath));
++  if (!asset) {
++    TF_WARN("hdCycles: failed to open packaged asset: %s", resolvedPath.c_str());
++    return std::string();
++  }
++
++  /* Read asset data and write to cache file */
++  std::shared_ptr<const char> buffer = asset->GetBuffer();
++  size_t size = asset->GetSize();
++  std::ofstream out(cachedFile, std::ios::binary);
++  if (!out || !buffer) {
++    TF_WARN("hdCycles: failed to extract packaged asset: %s", resolvedPath.c_str());
++    return std::string();
++  }
++  out.write(buffer.get(), size);
++  return cachedFile;
++}
++
+ template<typename DstType> DstType convertToCycles(const VtValue &value)
+ {
+   if (value.IsHolding<DstType>()) {
+@@ -74,7 +129,15 @@ template<> ustring convertToCycles<ustring>(const VtValue &value)
+   }
+   if (value.IsHolding<SdfAssetPath>()) {
+     const SdfAssetPath &path = value.UncheckedGet<SdfAssetPath>();
+-    return ustring(path.GetResolvedPath());
++    std::string resolved = path.GetResolvedPath();
++    if (resolved.empty()) {
++      resolved = path.GetAssetPath();
++    }
++    /* Handle package-relative paths (e.g. assets inside .usdz archives) */
++    if (!resolved.empty() && ArIsPackageRelativePath(resolved)) {
++      resolved = resolvePackageAsset(resolved);
++    }
++    return ustring(resolved);
+   }
+ 
+   if (value.CanCast<TfToken>()) {

@@ -107,6 +107,8 @@ echo "==> Blender commit: $(git -C "${BLENDER_DIR}" rev-parse --short HEAD)"
 if [ -d "${BLENDER_LIBS}/.git" ]; then
     echo "==> Updating Blender precompiled libs …"
     git -C "${BLENDER_LIBS}" pull --ff-only || true
+elif [ -d "${BLENDER_LIBS}" ]; then
+    echo "==> Blender precompiled libs directory exists (no .git), skipping clone …"
 else
     echo "==> Cloning Blender precompiled ARM64 libs (this may take a while) …"
     mkdir -p "${BLENDER_DIR}/lib"
@@ -153,10 +155,14 @@ echo "==> Applying hdCycles patches …"
 cd "${BLENDER_DIR}"
 git checkout -- intern/cycles/hydra/ 2>/dev/null || true
 git apply "${PATCHES_DIR}/hdcycles-usd26.patch"
+git apply "${PATCHES_DIR}/hdcycles-package-textures.patch"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Configure & build Cycles standalone + hdCycles Hydra delegate
 # ─────────────────────────────────────────────────────────────────────────────
+# Ensure cmake from pixi env is on PATH
+export PATH="${PIXI_ENV}/bin:$PATH"
+
 echo "==> Configuring Cycles build …"
 cmake -S "${BLENDER_DIR}" -B "${CYCLES_BUILD}" \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
