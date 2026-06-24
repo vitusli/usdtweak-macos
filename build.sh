@@ -22,6 +22,15 @@ BLENDER_LIBS="${BLENDER_DIR}/lib/macos_arm64"
 CYCLES_BUILD="${BLENDER_DIR}/build_cycles"
 COMPAT_DIR="${DEPS_DIR}/conda_usd_compat"
 
+git_lfs() {
+    git \
+        -c filter.lfs.required=true \
+        -c "filter.lfs.clean=git-lfs clean -- %f" \
+        -c "filter.lfs.smudge=git-lfs smudge -- %f" \
+        -c "filter.lfs.process=git-lfs filter-process" \
+        -C "$1" lfs "${@:2}"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Ensure pixi is installed
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,6 +113,24 @@ else
 fi
 echo "==> Blender commit: $(git -C "${BLENDER_DIR}" rev-parse --short HEAD)"
 
+# We only build Cycles/hdCycles, not the Blender application. Blender's top-level
+# CMake still rejects Git-LFS pointer files such as startup.blend unconditionally.
+STARTUP_BLEND="${BLENDER_DIR}/release/datafiles/startup.blend"
+if [ -f "${STARTUP_BLEND}" ] && [ "$(wc -c < "${STARTUP_BLEND}")" -lt 1024 ]; then
+    if command -v git-lfs &>/dev/null; then
+        echo "==> Fetching Blender Git LFS assets …"
+        git_lfs "${BLENDER_DIR}" pull --include="release/datafiles/startup.blend"
+    else
+        echo "==> Removing incomplete startup.blend Git LFS pointer (Cycles-only build) …"
+        rm -f "${STARTUP_BLEND}"
+    fi
+fi
+
+if [ -d "${BLENDER_LIBS}" ] && [ ! -d "${BLENDER_LIBS}/.git" ] && [ ! -d "${BLENDER_LIBS}/embree" ]; then
+    echo "==> Removing incomplete Blender precompiled libs directory …"
+    rm -rf "${BLENDER_LIBS}"
+fi
+
 if [ -d "${BLENDER_LIBS}/.git" ]; then
     echo "==> Updating Blender precompiled libs …"
     git -C "${BLENDER_LIBS}" pull --ff-only || true
@@ -115,6 +142,13 @@ else
     git clone --depth=1 \
         https://projects.blender.org/blender/lib-macos_arm64.git "${BLENDER_LIBS}"
 fi
+
+if ! command -v git-lfs &>/dev/null; then
+    echo "ERROR: git-lfs is required for Blender precompiled libraries. Install it with: brew install git-lfs"
+    exit 1
+fi
+echo "==> Fetching Blender precompiled library Git LFS assets …"
+git_lfs "${BLENDER_LIBS}" pull --exclude="usd/**"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Create conda USD compatibility wrapper
@@ -153,7 +187,8 @@ ln -sfn "${COMPAT_DIR}" "${BLENDER_LIBS}/usd"
 # ─────────────────────────────────────────────────────────────────────────────
 echo "==> Applying hdCycles patches …"
 cd "${BLENDER_DIR}"
-git checkout -- intern/cycles/hydra/ 2>/dev/null || true
+git checkout -- CMakeLists.txt intern/cycles/hydra/ 2>/dev/null || true
+git apply "${PATCHES_DIR}/blender-cycles-profile.patch"
 git apply "${PATCHES_DIR}/hdcycles-usd26.patch"
 git apply "${PATCHES_DIR}/hdcycles-package-textures.patch"
 
@@ -166,6 +201,7 @@ export PATH="${PIXI_ENV}/bin:$PATH"
 echo "==> Configuring Cycles build …"
 cmake -S "${BLENDER_DIR}" -B "${CYCLES_BUILD}" \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
+    -DWITH_BLENDER=OFF \
     -DWITH_CYCLES_STANDALONE=ON \
     -DWITH_CYCLES_STANDALONE_GUI=OFF \
     -DWITH_CYCLES_HYDRA_RENDER_DELEGATE=ON \

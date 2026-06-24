@@ -1,0 +1,12 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1f3543cf..3cd7f339 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -2439,6 +2439,7 @@ if(WITH_BLENDER)
+   add_subdirectory(source)
+ elseif(WITH_CYCLES_STANDALONE OR WITH_CYCLES_HYDRA_RENDER_DELEGATE)
+   add_subdirectory(intern/atomic)
++  add_subdirectory(intern/profile)
+   add_subdirectory(intern/guardedalloc)
+   add_subdirectory(intern/libc_compat)
+   add_subdirectory(intern/sky)
